@@ -1,5 +1,6 @@
 package io.quarkus.test.common.http;
 
+import java.lang.annotation.Annotation;
 import java.lang.reflect.Field;
 import java.util.Collections;
 import java.util.HashMap;
@@ -56,10 +57,18 @@ public class TestHTTPResourceManager {
     }
 
     public static void inject(Object testCase, List<Function<Class<?>, String>> endpointProviders) {
+        inject(testCase, endpointProviders, null);
+    }
+
+    public static void inject(Object testCase, List<Function<Class<?>, String>> endpointProviders,
+            TestHTTPEndpoint enclosingClassEndpointAnnotation) {
         Map<Class<?>, TestHTTPResourceProvider<?>> providers = getProviders();
-        Class<?> c = testCase.getClass();
+        Class<?> c = enclosingClassEndpointAnnotation == null ? testCase.getClass() : (Class<?>) testCase;
         while (c != Object.class) {
             TestHTTPEndpoint classEndpointAnnotation = c.getAnnotation(TestHTTPEndpoint.class);
+            if (classEndpointAnnotation == null) {
+                classEndpointAnnotation = enclosingClassEndpointAnnotation;
+            }
             for (Field f : c.getDeclaredFields()) {
                 TestHTTPResource resource = f.getAnnotation(TestHTTPResource.class);
                 if (resource != null) {
@@ -124,6 +133,15 @@ public class TestHTTPResourceManager {
                         f.set(testCase, provider.provide(val, f));
                     } catch (Exception e) {
                         throw new RuntimeException(e);
+                    }
+                }
+            }
+            for (Class<?> subClass : c.getDeclaredClasses()) {
+                for (Annotation annotation : subClass.getAnnotations()) {
+                    Class<? extends Annotation> annotationType = annotation.annotationType();
+                    if (annotationType.getName().equals("org.junit.jupiter.api.Nested")) {
+                        inject(subClass, endpointProviders, classEndpointAnnotation);
+                        break;
                     }
                 }
             }
